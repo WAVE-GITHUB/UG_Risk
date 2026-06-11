@@ -1,0 +1,19 @@
+# Block data assets and shapefiles permanently
+data/
+outputs/
+logs/*.log
+
+# Safety fallback extensions
+*.dbf
+*.shp
+*.rds
+*.tif
+*.mp4data/
+outputs/
+logs/
+*.rds
+*.shp
+*.dbf
+*.tif
+*.mp4
+.Rproj.user
