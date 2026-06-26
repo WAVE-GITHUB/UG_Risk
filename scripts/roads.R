@@ -23,7 +23,33 @@ roads_gin <- st_read(
   quiet = TRUE
 )
 
+roads_ben <- st_read(
+  "data/roadMaps/ben_roads/roads_lines.shp",
+                     quiet = TRUE)
 
+roads_bfa <- st_read(
+  "data/roadMaps/bfa_roads/roads_lines.shp",
+                     quiet = TRUE)
+
+roads_gha <- st_read(
+  "data/roadMaps/gha_roads/roads_lines.shp",
+                     quiet = TRUE)
+
+roads_lbr <- st_read(
+  "data/roadMaps/lbr_roads/roads_lines.shp",
+                     quiet = TRUE)
+
+roads_ner <- st_read(
+  "data/roadMaps/ner_roads/roads_lines.shp",
+                     quiet = TRUE)
+
+roads_nga <- st_read(
+  "data/roadMaps/nga_roads/hotosm_nga_roads_lines_shp.shp",
+                     quiet = TRUE)
+
+roads_tgo <- st_read(
+  "data/roadMaps/tgo_roads/roads_lines.shp",
+                     quiet = TRUE)
 
 #-----------------------------------------------------------
 # Harmonize schema
@@ -50,6 +76,54 @@ roads_gin <- roads_gin %>%
     geometry
   )
 
+roads_ben <-  roads_ben  %>% 
+  transmute(
+    country = "Benin",
+    road_type = highway,
+    geometry
+  )
+
+roads_bfa <-  roads_bfa %>% 
+  transmute(
+    country = "Burkina-Faso",
+    road_type = highway,
+    geometry
+  )
+
+roads_gha <- roads_gha %>% 
+  transmute(
+    country = "Ghana",
+    road_type = highway,
+    geometry
+  )
+
+roads_lbr <-  roads_lbr %>% 
+  transmute(
+    country = "Liberia",
+    road_type = highway,
+    geometry
+  )
+
+roads_ner <-  roads_ner %>% 
+  transmute(
+    country = "Niger",
+    road_type = highway,
+    geometry
+  )
+
+roads_nga <-  roads_nga %>% 
+  transmute(
+    country = "Nigeria",
+    road_type = highway,
+    geometry
+  )
+
+roads_tgo <-  roads_tgo %>% 
+  transmute(
+    country = "Togo",
+    road_type = highway,
+    geometry
+  )
 #-----------------------------------------------------------
 # Merge
 #-----------------------------------------------------------
@@ -57,7 +131,14 @@ roads_gin <- roads_gin %>%
 roads_all <- rbind(
   roads_civ,
   roads_sle,
-  roads_gin
+  roads_gin, 
+  roads_ben, 
+  roads_bfa,
+  roads_gha,
+  roads_lbr,
+  roads_ner,
+  roads_nga,
+  roads_tgo
 )
 
 #-----------------------------------------------------------

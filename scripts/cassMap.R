@@ -1,11 +1,10 @@
 #===========================================================
-# Cassava Map
+# Cassava Map - Country Borders (Admin 0)
 #===========================================================
 
 # ===========================================================
 # 1. Load Cassava Map (Keep the raster object intact!)
 # ===========================================================
-# terra::rast() replaces raster::raster()
 cassavaMap <- rast("data/CassavaMap_Prod_v1.tif") 
 
 # ===========================================================
@@ -14,6 +13,14 @@ cassavaMap <- rast("data/CassavaMap_Prod_v1.tif")
 civ     <- st_read("data/countriesMaps/civ_admin/civ_admin1_em.shp")
 sierraL <- st_read("data/countriesMaps/sle_admin/sle_admin1.shp")
 guinea  <- st_read("data/countriesMaps/gna_admin/gis_osm_adminareas_a_free_1.shp")
+ben <- st_read("data/countriesMaps/ben_admin/geoBoundaries-BEN-ADM3_simplified.shp")
+bfa <- st_read("data/countriesMaps/bfa_admin/geoBoundaries-BFA-ADM2_simplified.shp")
+gha <- st_read("data/countriesMaps/gha_admin/geoBoundaries-GHA-ADM2_simplified.shp")
+lbr <-st_read("data/countriesMaps/lbr_admin/lbr_admin0_em.shp")
+ner <-st_read("data/countriesMaps/ner_admin/geoBoundaries-NER-ADM2.shp")
+nga <- st_read("data/countriesMaps/nga_admin/geoBoundaries-NGA-ADM2_simplified.shp")
+tgo <- st_read("data/countriesMaps/tgo_admin/geoBoundaries-TGO-ADM2_simplified.shp")
+
 
 civ2 <- civ %>% 
   dplyr::select(country = adm0_name, admin1 = adm1_name)
@@ -24,25 +31,40 @@ sle2 <- sierraL %>%
 gin2 <- guinea %>% 
   transmute(country = "Guinea", admin1 = name)
 
-# Combine, fix geometries, and dissolve boundaries
-three_countries <- rbind(civ2, sle2, gin2) %>% 
+ben2 <- ben %>% 
+  transmute(country = "Benin", admin1 = shapeName)
+
+bfa2 <- bfa %>% 
+  transmute(country = "Burkina-Faso", admin1 = shapeName)
+
+gha2 <- gha %>% 
+  transmute(country = "Ghana", admin1 = shapeName)
+
+lbr2 <- lbr %>% 
+  dplyr::select(country = adm0_name,  admin1 = adm0_name1)
+
+ner2 <- ner %>% 
+  transmute(country = "Niger", admin1 = shapeName)
+
+nga2 <- nga %>% 
+  transmute(country = "Nigeria", admin1 = shapeName)
+
+tgo2 <- tgo %>% 
+  transmute(country = "Togo", admin1 = shapeName)
+
+# FIX: Group by country before summarizing to keep Admin 0 national borders intact
+three_countries <- rbind(civ2, sle2, gin2, ben2, bfa2, gha2, lbr2, ner2, nga2,tgo2) %>% 
   st_make_valid() %>%
-  st_union()
+  group_by(country) %>% 
+  summarize(.groups = "drop") # This dissolves Admin 1 into distinct Admin 0 borders
 
 # ===========================================================
 # 3. Project Vector Data to Match Raster CRS
 # ===========================================================
-# Project the sf object directly using the raster's CRS
 three_countries_proj <- st_transform(three_countries, crs(cassavaMap))
-
-# Convert the sfc geometry back into a proper sf dataframe
-three_countries_sf <- st_as_sf(three_countries_proj)
 
 # ===========================================================
 # 4. Crop and Mask (Native terra workflow)
 # ===========================================================
-# terra::crop accepts sf objects directly without converting to 'Spatial'
-cassava_crop <- crop(cassavaMap, three_countries_proj)
-
-# Mask the cropped raster to the exact vector boundaries
-cassava_3countries <- mask(cassava_crop, three_countries_sf)
+cassava_crop       <- crop(cassavaMap, three_countries_proj)
+cassava_3countries <- mask(cassava_crop, three_countries_proj)

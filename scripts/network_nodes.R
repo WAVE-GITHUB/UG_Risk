@@ -1,23 +1,20 @@
 ############################################################
 ## Build epidemiological network from cassava suitability
-## and road-mediated movement
+## and road-mediated movement (Border-Weighted Network)
 ############################################################
 
-library(terra)
-library(sf)
-library(tidyverse)
-library(igraph)
 
 # Ensure output repository structure is active
 if(!dir.exists("outputs")) dir.create("outputs", recursive = TRUE)
 
+# CONFIGURATION PARAMETER: Cross-border transmission weight modifier
+# 1.0 = No penalty (Original gravity model)
+# 0.1 = Cross-border movement is penalized by 90% (forcing high domestic density)
+border_weight_modifier <- 0.15 
+
 #-----------------------------------------------------------
 # 1. Select and Aggregate Occupied Cassava Cells ----
 #-----------------------------------------------------------
-# High-resolution cell extraction can lead to millions of network nodes,
-# causing exponential memory exhaustion (O(N^2)) during matrix generation.
-# We aggregate by factor = 10 to establish clean regional landscape patches.
-
 cat("Aggregating risk grid to regional landscape nodes...\n")
 
 risk_agg <- aggregate(
@@ -30,69 +27,86 @@ risk_agg <- aggregate(
 # Extract non-NA geometric points from the aggregated spatial model
 nodes_spatial <- as.points(risk_agg)
 
-# Convert cleanly to a data frame containing explicit x/y coordinates
-nodes_df <- as.data.frame(nodes_spatial, geom = "XY")
+# Convert to an sf object to perform a spatial join with country boundaries
+nodes_sf <- st_as_sf(nodes_spatial)
+st_crs(nodes_sf) <- 32630
 
-# Standardize names safely regardless of what the input raster layer was named
-colnames(nodes_df)[1] <- "risk"
+# Standardize risk column naming
+colnames(nodes_sf)[1] <- "risk"
 
-# Clean out absolute zeros, negative noise, and missing value records
-nodes_df <- nodes_df %>%
-  filter(!is.na(risk), risk > 0) %>%
-  mutate(node_id = row_number()) %>%
-  select(node_id, x = x, y = y, risk)
+# Clean baseline records
+nodes_sf <- nodes_sf %>%
+  filter(!is.na(risk), risk > 0)
+
+#-----------------------------------------------------------
+# NEW STEP: Spatial Intersection with Country Boundaries ----
+#-----------------------------------------------------------
+cat("Intersecting network nodes with country perimeters...\n")
+
+# Verify study_borders exists from your previous geometry processing step
+if(!exists("study_borders")) {
+  stop("CRITICAL DEPENDENCY MISSING: 'study_borders' spatial object was not found.")
+}
+
+# Perform spatial point-in-polygon join to tag each node with its respective country name
+nodes_mapped_sf <- st_join(nodes_sf, study_borders, join = st_intersects)
+
+# Extract coordinates and convert back to a clean modeling data frame
+nodes_df <- nodes_mapped_sf %>%
+  mutate(
+    node_id = row_number(),
+    x = st_coordinates(.)[,1],
+    y = st_coordinates(.)[,2]
+  ) %>%
+  st_drop_geometry() %>%
+  # Fallback allocation in case a border-edge node sits pixel-wise outside the vector outlines
+  mutate(country = ifelse(is.na(country), "Border-Edge-Artifact", country)) %>%
+  dplyr::select(node_id, x, y, risk, country)
 
 cat("Successfully generated network nodes. Count:", nrow(nodes_df), "\n")
+print(table(nodes_df$country)) # Prints node count per country for diagnostics
 
-# Save primary nodes database tracking file
-saveRDS(
-  nodes_df,
-  "outputs/nodes.rds"
-)
+saveRDS(nodes_df, "outputs/nodes.rds")
 
 #-----------------------------------------------------------
 # 2. Distance Matrix Calculation ----
 #-----------------------------------------------------------
 cat("Computing geographical Euclidean distance matrix...\n")
 
-# Matrix operations require a clean coordinate pair matrix
 coords_matrix <- as.matrix(nodes_df[, c("x", "y")])
-
-# Calculate distances between all node combinations
 distance_matrix <- as.matrix(dist(coords_matrix))
 
-# Apply matching node IDs to matrix row and column headers for network tracking
 rownames(distance_matrix) <- nodes_df$node_id
 colnames(distance_matrix) <- nodes_df$node_id
 
-saveRDS(
-  distance_matrix,
-  "outputs/distance_matrix.rds"
-)
+saveRDS(distance_matrix, "outputs/distance_matrix.rds")
 
 #-----------------------------------------------------------
-# 3. Compute Gravity-Based Movement / Adjacency Matrix ----
+# 3. Compute Gravity-Based Movement with Border Penalties ----
 #-----------------------------------------------------------
-cat("Formulating gravity-based network connectivity matrix...\n")
+cat("Formulating border-weighted gravity network connectivity matrix...\n")
 
-# Constructing the actual movement connectivity weight matrices
-# Formula: Movement(i,j) = (Risk_i * Risk_j) / (1 + Distance_ij^2)
 risk_vector <- nodes_df$risk
-
-# Outer product multiplies vector values across pairs: Risk_i * Risk_j
 risk_product_matrix <- outer(risk_vector, risk_vector, "*")
 
-# Apply an inverse-distance power decay function to capture road-mediated movement
-# Adding 1 prevents division by zero anomalies on the diagonal axis
-movement_matrix <- risk_product_matrix / (1 + (distance_matrix)^2)
+# Base landscape gravity structure layer
+base_movement_matrix <- risk_product_matrix / (1 + (distance_matrix)^2)
 
-# Set self-loop interactions to absolute zero
+# NEW MATH: Generate Country Match Multiplier Matrix
+cat("Applying international border restrictions and friction modifiers...\n")
+country_vector <- nodes_df$country
+
+# Matrix outer match: Returns TRUE if Row Node and Column Node share the same country string
+country_match_matrix <- outer(country_vector, country_vector, "==")
+
+# Construct modifier array: 1.0 for matches, border_weight_modifier for international links
+border_penalty_matrix <- ifelse(country_match_matrix, 1.0, border_weight_modifier)
+
+# Apply the border weight drop to the base network weights
+movement_matrix <- base_movement_matrix * border_penalty_matrix
+
+# Clear diagonal tracking loops
 diag(movement_matrix) <- 0
 
-saveRDS(
-  movement_matrix,
-  "outputs/movement_matrix.rds"
-)
-
-cat("All epidemiological network matrices saved successfully to /outputs/.\n")
-
+saveRDS(movement_matrix, "outputs/movement_matrix.rds")
+cat("✔ Border-weighted network execution complete. Matrices saved to /outputs/.\n")
